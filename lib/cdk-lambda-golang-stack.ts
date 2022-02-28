@@ -1,26 +1,27 @@
-import * as cdk from '@aws-cdk/core';
-import * as apigateway from '@aws-cdk/aws-apigateway';
-import * as dynamodb from '@aws-cdk/aws-dynamodb';
-import * as lambda from '@aws-cdk/aws-lambda';
+import { Table, AttributeType } from 'aws-cdk-lib/aws-dynamodb';
+import { Stack, StackProps, RemovalPolicy } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import { Function, Runtime, AssetCode } from 'aws-cdk-lib/aws-lambda';
+import { MockIntegration, RestApi, EndpointType, LambdaIntegration, IResource, PassthroughBehavior } from 'aws-cdk-lib/aws-apigateway';
 
-export class CdkLambdaGolangStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+export class CdkLambdaGolangStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
-    const dynamoTable = new dynamodb.Table(this, 'userTable', {
+    const dynamoTable = new Table(this, 'userTable', {
       tableName: 'User',
       partitionKey: {
         name: 'UserID',
-        type: dynamodb.AttributeType.STRING
+        type: AttributeType.STRING
       },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     const makeLambdaResource = (functionID: string) => {
-      return new lambda.Function(this, functionID, {
+      return new Function(this, functionID, {
         functionName: functionID,
-        code: new lambda.AssetCode(`lambda/${functionID}/bin`),
+        code: new AssetCode(`lambda/${functionID}/bin`),
         handler: functionID,
-        runtime: lambda.Runtime.GO_1_X,
+        runtime: Runtime.GO_1_X,
         environment: {
           TABLE_NAME: dynamoTable.tableName,
           REGION: "ap-northeast-1"
@@ -36,32 +37,33 @@ export class CdkLambdaGolangStack extends cdk.Stack {
     dynamoTable.grantReadWriteData(fetchLambda);
     dynamoTable.grantReadWriteData(putLambda);
     dynamoTable.grantReadWriteData(deleteLambda);
-    const api = new apigateway.RestApi(this, 'golangRestApi', {});
+    const api = new RestApi(this, 'golangRestApi', {});
 
     // path: /users
     const users = api.root.addResource('users');
-    const fetchIntegration = new apigateway.LambdaIntegration(fetchLambda);
+    const fetchIntegration = new LambdaIntegration(fetchLambda);
     users.addMethod('GET', fetchIntegration);
     addCorsOptions(users);
 
     // path: /user
     const user = api.root.addResource('user');
-    const putIntegration = new apigateway.LambdaIntegration(putLambda);
+    const putIntegration = new LambdaIntegration(putLambda);
     user.addMethod('POST', putIntegration);
     addCorsOptions(user);
 
     // path: /user/{userID}
     const userByID = user.addResource('{userID}');
-    const getIntegration = new apigateway.LambdaIntegration(getLambda);
+    const getIntegration = new LambdaIntegration(getLambda);
     userByID.addMethod('GET', getIntegration);
-    const deleteIntegration = new apigateway.LambdaIntegration(deleteLambda);
+    const deleteIntegration = new LambdaIntegration(deleteLambda);
     userByID.addMethod('DELETE', deleteIntegration);
     addCorsOptions(userByID);
+
   }
 }
 
-export function addCorsOptions(apiResource: apigateway.IResource) {
-  apiResource.addMethod('OPTIONS', new apigateway.MockIntegration({
+export function addCorsOptions(apiResource: IResource) {
+  apiResource.addMethod('OPTIONS', new MockIntegration({
     integrationResponses: [{
       statusCode: '200',
       responseParameters: {
@@ -71,7 +73,7 @@ export function addCorsOptions(apiResource: apigateway.IResource) {
         'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,POST,DELETE'",
       },
     }],
-    passthroughBehavior: apigateway.PassthroughBehavior.NEVER,
+    passthroughBehavior: PassthroughBehavior.NEVER,
     requestTemplates: {
       "application/json": "{\"statusCode\": 200}"
     },
